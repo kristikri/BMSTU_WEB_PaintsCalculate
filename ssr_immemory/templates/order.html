@@ -1,0 +1,26 @@
+<html lang="ru">
+<head>
+    <title>Церезит</title>
+    <link rel="stylesheet" href="/static/styles/order_style.css">
+</head>
+
+<header>
+    <a href="/hello"><img src="/static/img/logo.png" alt="home" class="header-img"></a>
+</header>
+
+<body>
+    <div class="order-container">
+        <div class="order-image-container">
+            <img src="http://localhost:9000/test/{{.Order.Photo}}" alt="img" class="order-image">
+        </div>
+        <div class="order-info">
+            <h1 class="order-title">{{.Order.Title}}</h1> 
+            <div class="order-hiding-power">Укрывистостью {{.Order.HidingPower}}</div>
+        </div>
+    </div>
+    
+    <div class="order-description">
+        <p>{{.Order.Description}}</p>
+    </div>
+</body>
+</html>

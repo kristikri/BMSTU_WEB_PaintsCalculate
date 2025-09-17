@@ -1,0 +1,52 @@
+<html lang="ru">
+<head>
+    <title>Церезит - Калькулятор</title>
+    <link rel="stylesheet" href="/static/styles/calculate_style.css">
+</head>
+<body>
+    <header>
+        <a href="/hello"><img src="/static/img/logo.png" alt="home" class="header-img"></a>
+    </header>
+    <p style="font-size: 34px;background-color: white;padding-left: 35px;height: 70px;padding-top:20px;margin: 0px;">Калькулятор</p>
+    <div class="calculate-header">
+        <span class="header-item">Продукт</span>
+        <span class="header-item">Площадь нанесения, м²</span>
+        <span class="header-item">Кол-во слоёв</span>
+        <span class="header-item">Вам понадобится</span>
+    </div>
+
+    <div class="calculate-container">
+        {{ range .Orders }}
+        <div class="calculate-card">
+            <div class="card-image-container">
+                <img src="http://localhost:9000/test/{{.Photo}}" alt="{{.Title}}" class="card-image">
+            </div>
+            
+            <div class="card-title">
+                {{.Title}}
+            </div>
+            
+            <div class="input-container">
+                <input type="number" class="area-input" placeholder="0" min="0" step="0.1" value="0">
+            </div>
+            
+            <div class="counter-section">
+                <div class="counter-container">
+                    <button class="counter-btn minus" onclick="changeLayers(this, -1)">-</button>
+                    <div class="counter-display">
+                        <span class="counter-value">1</span>
+                    </div>
+                    <button class="counter-btn plus" onclick="changeLayers(this, 1)">+</button>
+                </div>
+            </div>
+            
+            <div class="result-container">
+                <span>0</span>
+                <span class="result-unit">кг</span>
+            </div>
+        </div>
+        {{ end }}
+    </div>
+    <a href="" class="calculate-button">Рассчитать</a>
+</body>
+</html>
