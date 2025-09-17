@@ -1,0 +1,37 @@
+<html lang="ru">
+<head>
+    <title>Церезит</title>
+    <link rel="stylesheet" href="/static/styles/index_style.css">
+</head>
+<body>
+    <header>
+        <a href="/hello"><img src="/static/img/logo.png" alt="home" class="header-img"></a>
+        <form action="/hello" method="GET">
+            <input type="text" name="query" value="{{ .query }}" class="search">
+            <button type="submit" class="button"><img src="/static/img/search.png" class="search-logo"></button>
+        </form>
+    </header>
+    
+    <p style="font-size: 34px;background-color: white;padding-left: 35px;height: 70px;padding-top:20px;margin: 0px;">Продукты</p>
+
+    <div class="card-container">
+        {{ range .Orders }}
+        <div class="card">
+            <p class="card-title">{{.Title}}</p>
+            <div class="card-image-container">
+                <img src="http://localhost:9000/test/{{.Photo}}" alt="img" class="card-image">
+            </div>
+            <div class="card-footer">
+                <p class="hiding-power">{{.HidingPower}}</p>
+                <a href="/order/{{.ID}}" class="card-button">Подробнее</a>
+            </div>
+        </div>
+        {{ end }}
+    </div>
+    <a href="/calculate" class="calculate-button">
+        <img src="/static/img/calculate.png" alt="Калькулятор" class="calculate-logo">
+        
+        
+    </a>
+</body>
+</html>
