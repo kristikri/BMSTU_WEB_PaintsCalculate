@@ -1,0 +1,52 @@
+<html lang="ru">
+<head>
+    <title>Церезит - Калькулятор</title>
+    <link rel="stylesheet" href="/static/styles/paints_calculate_style.css">
+</head>
+<body>
+    <header>
+        <a href="/"><img src="/static/img/logo.png" alt="home" class="header-img"></a>
+    </header>
+
+    {{if .HasRequest}}
+    <div style="background-color: white;padding-left: 35px;height: 70px;padding-top:20px;margin: 0px;">
+        <span style="font-size: 34px;margin-right: 550px;">Калькулятор</span>
+        <span style="font-size: 20px;margin-right: 20px;">Минимальное количество слоёв:</span>
+        <input type="number" class="area-input" placeholder="0" min="0" step="1" value="1">
+    </div>
+    <div class="calculate-header">
+        <span class="header-item">Продукт</span>
+        <span class="header-item">Укрывистость</span>
+        <span class="header-item">Площадь нанесения, м²</span>
+        <span class="header-item">Кол-во слоёв</span>
+        <span class="header-item">Вам понадобится</span>
+    </div>
+
+    <div class="calculate-container">
+        {{ range .Paints }}
+        <div class="calculate-card">
+            <div class="card-image-container">
+                <img src="http://localhost:9000/paints/{{.Photo}}" alt="{{.Title}}" class="card-image">
+            </div>
+            <div class="card-title">{{.Title}}</div>
+            <div>{{.HidingPower}} г/м²</div>
+            <div class="input-container">
+                <input type="number" class="area-input" placeholder="0" min="0" step="1" value="1">
+            </div>
+            <div class="input-container">
+                <input class="area-input" placeholder="0" min="0" step="1" value="1">
+            </div>
+            <div class="result-container">
+                <span>0</span>
+                <span class="result-unit">кг</span>
+            </div>
+        </div>
+        {{ end }}
+    </div>
+    
+    <form action="/delete-paint_request" method="POST">
+        <button type="submit" class="paint-button" style="margin-left: 89%;">Удалить заявку</button>
+    </form>
+    {{end}}
+</body>
+</html>
