@@ -27,6 +27,7 @@
                 <input type="hidden" name="paint_id" value="{{.ID}}"> 
                 <input type="hidden" name="area" value="1">
                 <input type="hidden" name="layers" value="1">
+                <input type="hidden" name="request_id" value="{{$.currentRequestID}}">
                 <button type="submit" class="paint-button">Добавить</button>
             </form>
             <a href="/paint/{{.ID}}" class="paint-button">Подробнее</a>
@@ -34,10 +35,16 @@
         </div>
         {{ end }}
     </div>
-    
-    <a href="/paints_calculate" class="calculate-button">
+    {{if ne .paintCount 0}}
+    <a href="/paints_calculate/{{.currentRequestID}}" class="calculate-button">
         <img src="/static/img/calculate.png" alt="Калькулятор" class="calculate-logo">
-        <span>2</span>
+        <span>{{.paintCount}}</span>
     </a>
+    {{else}}
+    <a href="/" class="inactive-calculate-button">
+        <img src="/static/img/inactive-calculate.png" alt="Калькулятор" class="calculate-logo">
+        <span>{{.paintCount}}</span>
+    </a>
+    {{end}}
 </body>
 </html> 

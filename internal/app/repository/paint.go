@@ -71,8 +71,9 @@ func (r *Repository) AddPaintToRequest(paint_requestID uint, paintID uint, area 
 	err = r.db.Create(&requestPaint).Error
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
+			// ИСПРАВЛЕНО: правильное имя поля - request_id (а не paint_request_id)
 			return r.db.Model(&ds.RequestPaint{}).
-				Where("paint_request_id = ? AND paint_id = ?", paint_requestID, paintID).
+				Where("request_id = ? AND paint_id = ?", paint_requestID, paintID).
 				Updates(map[string]interface{}{
 					"area":     area,
 					"layers":   layers,
@@ -122,14 +123,15 @@ func (r *Repository) DeleteRequestSQL(paint_requestID uint) error {
 
 func (r *Repository) GetPaintCount(userID uint) int64 {
 	var count int64
-	var paint_request ds.PaintRequest
+	var paintRequest ds.PaintRequest
 	
-	err := r.db.Where("creator_id = ? AND status = ?", userID, "черновик").First(&paint_request).Error
+	err := r.db.Where("creator_id = ? AND status = ?", userID, "черновик").First(&paintRequest).Error
 	if err != nil {
 		return 0
 	}
 	
-	r.db.Model(&ds.RequestPaint{}).Where("paint_request = ?", paint_request.ID).Count(&count)
+	// Исправлено: правильное имя поля - request_id
+	r.db.Model(&ds.RequestPaint{}).Where("request_id = ?", paintRequest.ID).Count(&count)
 	return count
 }
 func (r *Repository) GetDraftRequest(userID uint) (ds.PaintRequest, error) {

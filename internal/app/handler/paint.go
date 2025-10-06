@@ -1,6 +1,7 @@
 package handler
 
 import (
+    "fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -49,6 +50,13 @@ func (h *Handler) GetPaints(ctx *gin.Context) {
 	}
 
 	userID := uint(1)
+    var currentRequestID uint
+    request, err := h.Repository.GetOrCreateDraftRequest(userID)
+    if err != nil {
+		logrus.Error("Failed to get draft request:", err)
+	} else {
+		currentRequestID = request.ID
+	}
 	paintCount := h.Repository.GetPaintCount(userID)
 
 	ctx.HTML(http.StatusOK, "paints.html", gin.H{
@@ -56,30 +64,82 @@ func (h *Handler) GetPaints(ctx *gin.Context) {
 		"Paints":    paints,
 		"query":     searchQuery,
 		"paintCount": paintCount,
+        "currentRequestID": currentRequestID,
 	})
 }
 
 func (h *Handler) GetPaintCalculate(ctx *gin.Context) {
     userID := uint(1)
-    request, err := h.Repository.GetDraftRequest(userID)    
+    
+    idParam := ctx.Param("id")
+    if idParam == "" {
+        request, err := h.Repository.GetOrCreateDraftRequest(userID)
+        if err != nil {
+            logrus.Error(err)
+            ctx.HTML(http.StatusOK, "paints_calculate.html", gin.H{
+                "Paints":     []ds.Paint{},
+                "paintsCount": 0,
+                "HasRequest": false,
+            })
+            return
+        }
+        ctx.Redirect(http.StatusFound, fmt.Sprintf("/paints_calculate/%d", request.ID))
+        return
+    }
+    
+    id, err := strconv.Atoi(idParam)
+    if err != nil {
+        logrus.Error("Invalid request ID:", err)
+        request, err := h.Repository.GetOrCreateDraftRequest(userID)
+        if err != nil {
+            logrus.Error(err)
+            ctx.HTML(http.StatusOK, "paints_calculate.html", gin.H{
+                "Paints":     []ds.Paint{},
+                "paintsCount": 0,
+                "HasRequest": false,
+            })
+            return
+        }
+        ctx.Redirect(http.StatusFound, fmt.Sprintf("/paints_calculate/%d", request.ID))
+        return
+    }
+    
+    requestID := uint(id)
+    
+    _, err = h.Repository.GetRequestWithPaints(requestID)
+    if err != nil {
+        logrus.Error("Request not found:", err)
+        request, err := h.Repository.GetOrCreateDraftRequest(userID)
+        if err != nil {
+            logrus.Error(err)
+            ctx.HTML(http.StatusOK, "paints_calculate.html", gin.H{
+                "Paints":     []ds.Paint{},
+                "paintsCount": 0,
+                "HasRequest": false,
+            })
+            return
+        }
+        ctx.Redirect(http.StatusFound, fmt.Sprintf("/paints_calculate/%d", request.ID))
+        return
+    }
+
+    requestWithPaints, err := h.Repository.GetRequestWithPaints(requestID)
     var paints []ds.Paint
     hasRequest := false
 
     if err == nil {
-        requestWithPaints, err := h.Repository.GetRequestWithPaints(request.ID)
-        if err == nil {
-            for _, rp := range requestWithPaints.RequestPaints {
-                paints = append(paints, rp.Paint)
-            }
-            hasRequest = true
+        for _, rp := range requestWithPaints.RequestPaints {
+            paints = append(paints, rp.Paint)
         }
+        hasRequest = true
     }
 
     paintsCount := h.Repository.GetPaintCount(userID)
 
     ctx.HTML(http.StatusOK, "paints_calculate.html", gin.H{
-        "Paints":    paints,
+        "Paints":      paints,
         "paintsCount": paintsCount,
-        "HasRequest": hasRequest,
+        "HasRequest":  hasRequest,
+        "RequestID":   requestID,
     })
 }

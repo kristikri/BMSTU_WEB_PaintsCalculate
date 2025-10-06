@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"github.com/gin-gonic/gin"
@@ -20,8 +21,8 @@ func NewHandler(r *repository.Repository) *Handler {
 
 func (h *Handler) RegisterHandler(router *gin.Engine) {
 	router.GET("/", h.GetPaints)
-	router.GET("/paint/:id", h.GetPaint)
-	router.GET("/paints_calculate", h.GetPaintCalculate)        
+	router.GET("/paint/:id", h.GetPaint)   
+	router.GET("/paints_calculate/:id", h.GetPaintCalculate)   
 	router.POST("/add-to-paint_request", h.AddToPaintRequest) 
 	router.POST("/delete-paint_request", h.DeletePaintRequest) 
 	
@@ -68,7 +69,7 @@ func (h *Handler) AddToPaintRequest(ctx *gin.Context) {
         return
     }
 
-    area := 10.0
+    area := 1.0
     if areaStr != "" {
         area, err = strconv.ParseFloat(areaStr, 64)
         if err != nil {
@@ -77,7 +78,7 @@ func (h *Handler) AddToPaintRequest(ctx *gin.Context) {
         }
     }
 
-    layers := 2
+    layers := 1
     if layersStr != "" {
         layers, err = strconv.Atoi(layersStr)
         if err != nil {
@@ -86,19 +87,31 @@ func (h *Handler) AddToPaintRequest(ctx *gin.Context) {
         }
     }
 
-    request, err := h.Repository.GetOrCreateDraftRequest(userID)
+    requestIDStr := ctx.PostForm("request_id")
+    var requestID uint
+    
+    if requestIDStr != "" {
+        id, err := strconv.Atoi(requestIDStr)
+        if err != nil {
+            h.errorHandler(ctx, http.StatusBadRequest, err)
+            return
+        }
+        requestID = uint(id)
+    } else {
+        request, err := h.Repository.GetOrCreateDraftRequest(userID)
+        if err != nil {
+            h.errorHandler(ctx, http.StatusInternalServerError, err)
+            return
+        }
+        requestID = request.ID
+    }
+
+    err = h.Repository.AddPaintToRequest(requestID, uint(paintID), area, layers)
     if err != nil {
         h.errorHandler(ctx, http.StatusInternalServerError, err)
         return
     }
-
-    err = h.Repository.AddPaintToRequest(request.ID, uint(paintID), area, layers)
-    if err != nil {
-        h.errorHandler(ctx, http.StatusInternalServerError, err)
-        return
-    }
-
-    ctx.Redirect(http.StatusFound, "/paints_calculate")
+    ctx.Redirect(http.StatusFound, fmt.Sprintf("/paints_calculate/%d", requestID))
 }
 
 func (h *Handler) DeletePaintRequest(ctx *gin.Context) {
