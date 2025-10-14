@@ -1,142 +1,184 @@
 package repository
 
 import(
-	"strings"
+	"fmt"
+	"errors"
+	"mime/multipart"
+	"context"
+	"ssr_immemory/internal/app/api_types"
 	"ssr_immemory/internal/app/ds"
+	"ssr_immemory/internal/app/minioClient"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 
 func (r *Repository) GetPaints() ([]ds.Paint, error) {
 	var paints []ds.Paint
-	err := r.db.Find(&paints).Error
+	err := r.db.Order("id").Where("is_delete = false").Find(&paints).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(paints) == 0 {
+		return nil, fmt.Errorf("массив пустой")
+	}
+
+	return paints, nil
+}
+
+func (r *Repository) GetPaint(id int) (*ds.Paint, error) {
+	paint := ds.Paint{}
+	err := r.db.Order("id").Where("id = ? and is_delete = ?", id, false).First(&paint).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: краска с id %d", ErrNotFound, id)
+		}
+		return &ds.Paint{}, err
+	}
+	return &paint, nil
+}
+func (r *Repository) GetPaintsByTitle(title string) ([]ds.Paint, error) {
+	var paints []ds.Paint
+	err := r.db.Order("id").Where("title ILIKE ? and is_delete = ?", "%"+title+"%", false).Find(&paints).Error
 	if err != nil {
 		return nil, err
 	}
 	return paints, nil
 }
 
-func (r *Repository) GetPaint(id int) (ds.Paint, error) {
-	var paint ds.Paint
-	err := r.db.Where("id = ? AND is_delete = false", id).First(&paint).Error
+func (r *Repository) CreatePaint(paintJSON apitypes.PaintJSON) (ds.Paint, error) {
+	paint := apitypes.PaintFromJSON(paintJSON)
+	if paint.HidingPower <= 0 {
+		return ds.Paint{}, errors.New("неправильная укрывистость")
+	}
+	if paint.Title == "" {
+		return ds.Paint{}, errors.New("название не может быть пустым")
+	}
+	err := r.db.Create(&paint).First(&paint).Error
+	if err != nil {
+		return ds.Paint{}, err
+	}
+	return paint, nil
+}
+func (r *Repository) ChangePaint(id int, paintJSON apitypes.PaintJSON) (ds.Paint, error) {
+	paint := ds.Paint{}
+	if id < 0 {
+		return ds.Paint{}, errors.New("id должно быть >= 0")
+	}
+	err := r.db.Where("id = ? and is_delete = ?", id, false).First(&paint).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ds.Paint{}, fmt.Errorf("%w: краска с id %d", ErrNotFound, id)
+		}
+		return ds.Paint{}, err
+	}
+	if paintJSON.HidingPower <= 0 {
+		return ds.Paint{}, errors.New("неправильная укрывистость")
+	}
+	err = r.db.Model(&paint).Updates(apitypes.PaintFromJSON(paintJSON)).Error
 	if err != nil {
 		return ds.Paint{}, err
 	}
 	return paint, nil
 }
 
-func (r *Repository) GetPaintsByTitle(title string) ([]ds.Paint, error) {
-	var paints []ds.Paint
-	err := r.db.Where("title ILIKE ? AND is_delete = false", "%"+title+"%").Find(&paints).Error
-	if err != nil {
-		return nil, err
+func (r *Repository) DeletePaint(id int) error {
+	paint := ds.Paint{}
+	if id < 0 {
+		return errors.New("id должно быть >= 0")
 	}
-	return paints, nil
-}
 
-func (r *Repository) GetOrCreateDraftRequest(userID uint) (ds.PaintRequest, error) {
-	var paint_request ds.PaintRequest
-	err := r.db.Where("creator_id = ? AND status = ?", userID, "черновик").First(&paint_request).Error
-	
+	err := r.db.Where("id = ? and is_delete = ?", id, false).First(&paint).Error
 	if err != nil {
-		paint_request = ds.PaintRequest{
-			CreatorID:  userID,
-			Status:     "черновик",
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: краска с id %d", ErrNotFound, id)
 		}
-		err = r.db.Create(&paint_request).Error
+		return err
+	}
+	if paint.Photo != "" {
+		err = minioClient.DeleteObject(context.Background(), r.mc, minioClient.GetImgBucket(), paint.Photo)
 		if err != nil {
-			return ds.PaintRequest{}, err
+			return err
 		}
 	}
-	
-	return paint_request, nil
+
+	err = r.db.Model(&ds.Paint{}).Where("id = ?", id).Update("is_delete", true).Error
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (r *Repository) AddPaintToRequest(paint_requestID uint, paintID uint, area float64, layers int) error {
+func (r *Repository) AddPaintToRequest(requestId int, paintId int, area float64, layers int) error {
 	var paint ds.Paint
-	err := r.db.First(&paint, paintID).Error
-	if err != nil {
-		return err
-	}
-
-	quantity := area * paint.HidingPower * float64(layers) / 1000
-
-	requestPaint := ds.RequestPaint{
-		RequestID: paint_requestID,
-		PaintID:   paintID,
-		Area:      area,
-		Layers:    layers,
-		Quantity:  quantity,
-	}
-
-	err = r.db.Create(&requestPaint).Error
-	if err != nil {
-		if strings.Contains(err.Error(), "duplicate key") {
-			// ИСПРАВЛЕНО: правильное имя поля - request_id (а не paint_request_id)
-			return r.db.Model(&ds.RequestPaint{}).
-				Where("request_id = ? AND paint_id = ?", paint_requestID, paintID).
-				Updates(map[string]interface{}{
-					"area":     area,
-					"layers":   layers,
-					"quantity": quantity,
-				}).Error
+	if err := r.db.First(&paint, paintId).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: краска с id %d", ErrNotFound, paintId)
 		}
 		return err
 	}
 
-	return r.UpdateRequestTotals(paint_requestID)
-}
-
-func (r *Repository) UpdateRequestTotals(paint_requestID uint) error {
-	var totalArea, totalPaints float64
-	
-	row := r.db.Model(&ds.RequestPaint{}).
-		Where("request_id = ?", paint_requestID).
-		Select("COALESCE(SUM(area), 0), COALESCE(SUM(quantity), 0)").
-		Row()
-	
-	err := row.Scan(&totalArea, &totalPaints)
-	if err != nil {
+	var request ds.PaintRequest
+	if err := r.db.First(&request, requestId).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: заявка с id %d", ErrNotFound, requestId)
+		}
 		return err
 	}
-
-	return r.db.Model(&ds.PaintRequest{}).
-		Where("id = ?", paint_requestID).
-		Updates(map[string]interface{}{
-			"total_area":   totalArea,
-			"total_paints": totalPaints,
-		}).Error
-}
-
-func (r *Repository) GetRequestWithPaints(paint_requestID uint) (ds.PaintRequest, error) {
-	var request ds.PaintRequest
-	err := r.db.Preload("RequestPaints.Paint").First(&request, paint_requestID).Error
-	return request, err
-}
-
-func (r *Repository) DeleteRequestSQL(paint_requestID uint) error {
-    err := r.db.Exec("DELETE FROM request_paints WHERE request_id = ?", paint_requestID).Error
-    if err != nil {
-        return err
-    }
-    return r.db.Exec("UPDATE paint_requests SET status = 'удалён', date_finish = NOW() WHERE id = ?", paint_requestID).Error
-}
-
-func (r *Repository) GetPaintCount(userID uint) int64 {
-	var count int64
-	var paintRequest ds.PaintRequest
 	
-	err := r.db.Where("creator_id = ? AND status = ?", userID, "черновик").First(&paintRequest).Error
-	if err != nil {
-		return 0
+	requestPaint := ds.RequestsPaint{}
+	result := r.db.Where("paint_id = ? and request_id = ?", paintId, requestId).Find(&requestPaint)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 0 {
+		return fmt.Errorf("%w: краска %d уже в заявке %d", ErrAlreadyExists, paintId, requestId)
 	}
 	
-	// Исправлено: правильное имя поля - request_id
-	r.db.Model(&ds.RequestPaint{}).Where("request_id = ?", paintRequest.ID).Count(&count)
-	return count
+	return r.AddPaintToRequest(requestId, paintId, area, layers)
 }
-func (r *Repository) GetDraftRequest(userID uint) (ds.PaintRequest, error) {
-	var paint_request ds.PaintRequest
-	err := r.db.Where("creator_id = ? AND status = ?", userID, "черновик").First(&paint_request).Error
-	return paint_request, err
+
+func (r *Repository) GetModeratorAndCreatorLogin(request ds.PaintRequest) (string, string, error) {
+	var creator ds.User
+	var moderator ds.User
+
+	err := r.db.Where("id = ?", request.CreatorID).First(&creator).Error
+	if err != nil {
+		return "", "", err
+	}
+
+	var moderatorLogin string
+	if request.ModeratorID.Valid {
+		err = r.db.Where("id = ?", request.ModeratorID.Int64).First(&moderator).Error
+		if err != nil {
+			return "", "", err
+		}
+		moderatorLogin = moderator.Login
+	}
+	
+	return creator.Login, moderatorLogin, nil
+}
+
+func (r *Repository) UploadImage(ctx *gin.Context, paintId int, file *multipart.FileHeader) (ds.Paint, error) {
+	paint_, err := r.GetPaint(paintId)
+	if err != nil {
+		return ds.Paint{}, err
+	}
+	fileName, err := minioClient.UploadPaintImage(ctx, r.mc, minioClient.GetImgBucket(), file, *paint_)
+	if err != nil {
+		return ds.Paint{}, err
+	}
+
+	paint, err := r.GetPaint(paintId)
+	if err != nil {
+		return ds.Paint{}, err
+	}
+	paint.Photo = fileName
+	err = r.db.Save(&paint).Error
+	if err != nil {
+		return ds.Paint{}, err
+	}
+	return *paint, nil
 }
 

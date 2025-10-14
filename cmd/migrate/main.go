@@ -1,37 +1,28 @@
 package main
 
 import (
-	"log"
-	"os"
-
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"ssr_immemory/internal/app/ds"
+	"ssr_immemory/internal/app/dsn"
 )
 
 func main() {
 	_ = godotenv.Load()
-	
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "host=localhost user=postgres password=postgres dbname=paint_calculator port=5432 sslmode=disable"
-	}
-
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn.FromEnv()), &gorm.Config{})
 	if err != nil {
-		log.Fatal("failed to connect database:", err)
+		panic("failed to connect database")
 	}
 
+	// Migrate the schema
 	err = db.AutoMigrate(
-		&ds.User{},
 		&ds.Paint{},
+		&ds.RequestsPaint{},
 		&ds.PaintRequest{},
-		&ds.RequestPaint{},
+		&ds.User{},
 	)
 	if err != nil {
-		log.Fatal("cant migrate db:", err)
+		panic("cant migrate db")
 	}
-
-	log.Println("Migration completed successfully!")
 }

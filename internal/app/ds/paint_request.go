@@ -13,6 +13,6 @@ type PaintRequest struct {
 	DateFinish   sql.NullTime    `gorm:"default:null"`     
 	CreatorID    uint            `gorm:"not null"`
 	ModeratorID  sql.NullInt64
-	MinLayers    int             `gorm:"-"`//`gorm:"not null;default:1"`
-	RequestPaints []RequestPaint `gorm:"foreignKey:RequestID"`
+	MinLayers    int              `gorm:"not null;default:1"`
+	RequestPaints []RequestsPaint `gorm:"foreignKey:RequestID"`
 }

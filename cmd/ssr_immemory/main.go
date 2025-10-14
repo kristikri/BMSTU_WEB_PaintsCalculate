@@ -22,7 +22,7 @@ func main() {
 	postgresString := dsn.FromEnv()
 	fmt.Println("Connecting to database with DSN:", postgresString)
 
-	rep, errRep := repository.New(postgresString)
+	rep, errRep := repository.NewRepository(postgresString)
 	if errRep != nil {
 		logrus.Fatalf("error initializing repository: %v", errRep)
 	}
