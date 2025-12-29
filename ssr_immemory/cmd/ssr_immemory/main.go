@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-
+	"github.com/joho/godotenv"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"ssr_immemory/internal/app/config"
@@ -17,15 +17,18 @@ import (
 // @version 1.0
 // @description API для управления красками и заявками
 // @contact.name API Support
-// @contact.url http://localhost:8080
+// @contact.url http://localhost
 // @contact.email support@paint.com
 // @license.name MIT
-// @host localhost:8080
+// @host localhost
 // @BasePath /api/v1
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name Authorization
 func main() {
+	if err := godotenv.Load(); err != nil {
+        fmt.Println("Warning: .env not found:", err)
+    }
 	router := gin.Default()
 	conf, err := config.NewConfig()
 	if err != nil {
@@ -33,15 +36,14 @@ func main() {
 	}
 
 	postgresString := dsn.FromEnv()
-	fmt.Println("Connecting to database with DSN:", postgresString)
+    fmt.Println("Connecting to database with DSN:", postgresString)
 
-	rep, errRep := repository.NewRepository(postgresString)
-	if errRep != nil {
-		logrus.Fatalf("error initializing repository: %v", errRep)
-	}
+    rep, errRep := repository.NewRepository(postgresString)
+    if errRep != nil {
+        logrus.Fatalf("error initializing repository: %v", errRep)
+    }
 
-	hand := handler.NewHandler(rep)
-
-	application := pkg.NewApp(conf, router, hand)
-	application.RunApp()
+    hand := handler.NewHandler(rep)
+    application := pkg.NewApp(conf, router, hand)
+    application.RunApp()
 }

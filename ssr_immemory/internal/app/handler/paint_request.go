@@ -56,14 +56,33 @@ func (h *Handler) GetPaintRequests(ctx *gin.Context) {
 		h.errorHandler(ctx, http.StatusInternalServerError, err)
 		return
 	}
-	resp := make([]apitypes.PaintRequestJSON, 0, len(requests))
-	for _, c := range requests {
-		creatorLogin, moderatorLogin, err := h.Repository.GetModeratorAndCreatorLogin(c)
-		if err != nil {
-			h.errorHandler(ctx, http.StatusInternalServerError, err)
-			return
-		}
-		resp = append(resp, apitypes.PaintRequestToJSON(c, creatorLogin, moderatorLogin))
+type PaintRequestWithStats struct {
+	apitypes.PaintRequestJSON
+	TotalPaints      int `json:"total_paints"`
+	CalculatedPaints int `json:"calculated_paints"`
+}
+
+resp := make([]PaintRequestWithStats, 0, len(requests))
+
+for _, request := range requests {
+	creatorLogin, moderatorLogin, err := h.Repository.GetModeratorAndCreatorLogin(request)
+	if err != nil {
+		h.errorHandler(ctx, http.StatusInternalServerError, err)
+		return
+	}
+
+	requestPaints, _ := h.Repository.GetRequestPaints(uint(request.ID))
+	totalPaints := len(requestPaints)
+
+	calculatedPaints, _ := h.Repository.GetCalculatedPaintsCount(int(request.ID))
+
+	item := PaintRequestWithStats{
+		PaintRequestJSON: apitypes.PaintRequestToJSON(request, creatorLogin, moderatorLogin),
+		TotalPaints:      totalPaints,
+		CalculatedPaints: calculatedPaints,
+	}
+
+	resp = append(resp, item)
 	}
 	ctx.JSON(http.StatusOK, resp)
 }
@@ -89,8 +108,8 @@ func (h *Handler) GetRequestCart(ctx *gin.Context){
 
 	if paintsCount == 0 {
 		ctx.JSON(http.StatusOK, gin.H{
-			"status":       "no_draft",
-			"paints_count": paintsCount,
+			"status":-1,
+			"paints_count": 0,
 		})
 		return
 	}
@@ -101,7 +120,7 @@ func (h *Handler) GetRequestCart(ctx *gin.Context){
 			h.errorHandler(ctx, http.StatusUnauthorized, err)
 		} else if errors.Is(err, repository.ErrNoDraft) {
 			ctx.JSON(http.StatusOK, gin.H{
-				"status":       "no_draft",
+				"status": -1,
 				"paints_count": 0,
 			})
 		} else {
@@ -136,7 +155,7 @@ func (h *Handler) GetRequest(ctx *gin.Context) {
 		return
 	}
 
-	paints, request, err := h.Repository.GetRequestPaintsList(id)
+	request, err := h.Repository.GetSinglePaintRequest(id)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			h.errorHandler(ctx, http.StatusNotFound, err)
@@ -148,11 +167,6 @@ func (h *Handler) GetRequest(ctx *gin.Context) {
 		return
 	}
 
-	resp := make([]apitypes.PaintJSON, 0, len(paints))
-	for _, r := range paints {
-		resp = append(resp, apitypes.PaintToJSON(r))
-	}
-
 	creatorLogin, moderatorLogin, err := h.Repository.GetModeratorAndCreatorLogin(request)
 	if err != nil {
 		h.errorHandler(ctx, http.StatusInternalServerError, err)
@@ -160,18 +174,40 @@ func (h *Handler) GetRequest(ctx *gin.Context) {
 	}
 
 	requestPaints, _ := h.Repository.GetRequestPaints(request.ID)
-	
-	resp2 := make([]apitypes.RequestsPaintJSON, 0, len(requestPaints))
-	for _, r := range requestPaints {
-		resp2 = append(resp2, apitypes.RequestsPaintToJSON(r))
+
+	type ExtendedRequestPaintJSON struct {
+		apitypes.RequestsPaintJSON
+		PaintTitle string `json:"paint_title"`
+		PaintPhoto string `json:"paint_photo"`
+		HidingPower float64  `json:"hiding_power"`
 	}
+
+	resp := make([]ExtendedRequestPaintJSON, 0, len(requestPaints))
+	for _, rp := range requestPaints {
+    paint, err := h.Repository.GetPaint(int(rp.PaintID))
+    
+    extended := ExtendedRequestPaintJSON{
+        RequestsPaintJSON: apitypes.RequestsPaintToJSON(rp),
+        PaintTitle:        "",
+        PaintPhoto:        "",
+		HidingPower:       0,
+    }
+    
+    if err == nil && paint != nil {
+        extended.PaintTitle = paint.Title
+        extended.PaintPhoto = paint.Photo
+		extended.HidingPower = paint.HidingPower
+    }
+    
+    resp = append(resp, extended)
+}
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"request":       apitypes.PaintRequestToJSON(request, creatorLogin, moderatorLogin),
-		"paints":        resp,
-		"requestPaints": resp2,
+		"requestPaints": resp,
 	})
 }
+
 
 // FormRequest godoc
 // @Summary Сформировать заявку
@@ -350,4 +386,79 @@ func (h *Handler) ModerateRequest(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, apitypes.PaintRequestToJSON(request, creatorLogin, moderatorLogin))
+}
+
+// UpdatePaintQuantity godoc
+// @Summary Обновить рассчитанное количество краски (для асинхронного сервиса)
+// @Description Асинхронный сервис передаёт рассчитанное количество краски по конкретной строке заявки
+// @Tags paint_requests
+// @Accept json
+// @Produce json
+// @Param id path int true "ID заявки"
+// @Param data body map[string]interface{} true "Данные расчёта"
+// @Success 200 {object} map[string]string "Количество обновлено"
+// @Failure 400 {object} map[string]string "Неверные данные"
+// @Failure 403 {object} map[string]string "Доступ запрещен (неверный токен)"
+// @Failure 404 {object} map[string]string "Строка заявки не найдена"
+// @Router /requests/{id}/paint_quantity [put]
+func (h *Handler) UpdatePaintQuantity(ctx *gin.Context) {
+
+    authHeader := ctx.GetHeader("Authorization")
+    if authHeader != "secret123" {
+        ctx.JSON(http.StatusForbidden, gin.H{
+            "status":      "error",
+            "description": "доступ запрещён",
+        })
+        return
+    }
+    idStr := ctx.Param("id")
+    requestID, err := strconv.Atoi(idStr)
+    if err != nil {
+        ctx.JSON(http.StatusBadRequest, gin.H{
+            "status":      "error",
+            "description": "неверный ID заявки",
+        })
+        return
+    }
+    var requestData map[string]interface{}
+    if err := ctx.BindJSON(&requestData); err != nil {
+        ctx.JSON(http.StatusBadRequest, gin.H{
+            "status":      "error",
+            "description": "неверный формат данных",
+        })
+        return
+    }
+
+    rpID, hasRPID := requestData["request_paint_id"].(float64)
+    quantity, hasQuantity := requestData["quantity"].(float64)
+
+    if !hasRPID || !hasQuantity {
+        ctx.JSON(http.StatusBadRequest, gin.H{
+            "status":      "error",
+            "description": "request_paint_id и quantity обязательны",
+        })
+        return
+    }
+
+    err = h.Repository.UpdatePaintQuantity(requestID, int(rpID), quantity)
+    if err != nil {
+        if errors.Is(err, repository.ErrNotFound) {
+            ctx.JSON(http.StatusNotFound, gin.H{
+                "status":      "error",
+                "description": "строка заявки не найдена",
+            })
+        } else {
+            ctx.JSON(http.StatusInternalServerError, gin.H{
+                "status":      "error",
+                "description": "ошибка обновления количества",
+            })
+        }
+        return
+    }
+    ctx.JSON(http.StatusOK, gin.H{
+        "message":           "Количество краски обновлено успешно",
+        "request_id":        requestID,
+        "request_paint_id":  rpID,
+        "quantity":          quantity,
+    })
 }

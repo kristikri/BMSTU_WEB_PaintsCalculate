@@ -102,3 +102,5 @@ func (h *Handler) ChangeRequestPaint(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, apitypes.RequestsPaintToJSON(requestPaint))
 }
+
+

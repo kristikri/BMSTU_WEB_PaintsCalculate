@@ -26,15 +26,17 @@ func NewHandler(r *repository.Repository) *Handler {
 // @version 1.0
 // @description API для управления красками и заявками
 // @contact.name API Support
-// @contact.url http://localhost:8080
+// @contact.url http://localhost
 // @contact.email support@paint.com
 // @license.name MIT
-// @host localhost:8080
+// @host localhost
 // @BasePath /api/v1
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name Authorization
 func (h *Handler) RegisterHandler(router *gin.Engine) {
+	router.Use(CORSMiddleware())
+
 	api := router.Group("/api/v1") 
 
 	unauthorized := api.Group("/")
@@ -45,13 +47,16 @@ func (h *Handler) RegisterHandler(router *gin.Engine) {
 
 	authorized := api.Group("/")
 	authorized.Use(h.ModeratorMiddleware(false))
+	authorized.POST("/paint/:id/add-to", h.AddPaintToRequest)
 	authorized.POST("/paint/create-paint", h.CreatePaint)
 	authorized.PUT("/paint/:id/change-paint", h.ChangePaint)
 	authorized.DELETE("/paint/:id/delete-paint", h.DeletePaint)
 	authorized.POST("/paint/:id/upload-image", h.UploadImage)
-	authorized.POST("/paint/:id/add-to", h.AddPaintToRequest)
+	unauthorized.PUT("/requests/:id/paint_quantity", h.UpdatePaintQuantity)
 
-	authorized.GET("/requests/paints-calculate", h.GetRequestCart)
+	optionalauthorized := api.Group("/")
+	optionalauthorized.Use(h.WithOptionalAuthCheck())
+	optionalauthorized.GET("/requests/paints-calculate", h.GetRequestCart)
 	authorized.GET("/requests", h.GetPaintRequests)
 	authorized.GET("/requests/:id", h.GetRequest)
 	authorized.PUT("/requests/:id/change-paint_request", h.ChangeRequest)

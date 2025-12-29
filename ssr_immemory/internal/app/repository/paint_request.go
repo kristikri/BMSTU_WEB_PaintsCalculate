@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -151,9 +154,6 @@ func (r *Repository) ChangeRequest(id int, requestJSON apitypes.PaintRequestJSON
 	if id < 0 {
 		return ds.PaintRequest{}, errors.New("неправильное id, должно быть >= 0")
 	}
-	if requestJSON.MinLayers <= 0 {
-		return ds.PaintRequest{}, errors.New("неправильное минимальное количество слоев")
-	}
 	err := r.db.Where("id = ? and status != 'удалён'", id).First(&request).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -221,7 +221,7 @@ func (r *Repository) ModerateRequest(id int, status string, moderatorID uuid.UUI
 	moderatorIDUUID := uuid.NullUUID{
     UUID:  user.ID,
     Valid: true,
-}
+	}
 
 	err = r.db.Model(&request).Updates(ds.PaintRequest{
 		Status: status,
@@ -236,27 +236,99 @@ func (r *Repository) ModerateRequest(id int, status string, moderatorID uuid.UUI
 	}
 
 	if status == "завершена" {
-		requestPaints, err := r.GetRequestPaints(request.ID)
-		if err != nil {
-			return ds.PaintRequest{}, err
-		}
-		for _, requestPaint := range requestPaints {
-			paint, err := r.GetPaint(int(requestPaint.PaintID))
-			if err != nil {
-				return ds.PaintRequest{}, err
-			}
-			quantity, err := CalculatePaintQuantity(paint.HidingPower, requestPaint.Area, requestPaint.Layers)
-			if err != nil {
-				return ds.PaintRequest{}, err
-			}
-			err = r.db.Model(&requestPaint).Updates(ds.RequestsPaint{
-				Quantity: quantity,
-			}).Error
-			if err != nil {
-				return ds.PaintRequest{}, err
-			}
-		}
-	}
+    requestPaints, err := r.GetRequestPaints(request.ID)
+    if err != nil {
+        return ds.PaintRequest{}, err
+    }
 
+    for _, rp := range requestPaints {
+        paint, err := r.GetPaint(int(rp.PaintID))
+        if err != nil {
+            logrus.Errorf("Ошибка получения краски %d: %v", rp.PaintID, err)
+            continue
+        }
+
+        go r.calculateSinglePaintQuantityAsync(
+            int(request.ID),
+            paint,
+            rp,
+        )
+    }
+
+    logrus.Infof(
+        "Асинхронный расчёт количества краски запущен: request=%d, позиций=%d",
+        request.ID,
+        len(requestPaints),
+    )
+	}
 	return request, nil
+}
+func (r *Repository) calculateSinglePaintQuantityAsync(requestID int, paint *ds.Paint, rp ds.RequestsPaint,) {
+    asyncServiceURL := "http://localhost:8000/api/v1/calculate_quantity/"
+
+    requestData := map[string]interface{}{
+        "request_id": requestID,
+        "paint_id":   paint.ID,
+        "area":       rp.Area,
+        "layers":     rp.Layers,
+        "hiding_power": paint.HidingPower,
+    }
+
+    jsonData, err := json.Marshal(requestData)
+    if err != nil {
+        logrus.Errorf("Ошибка сериализации запроса для краски %d: %v", paint.ID, err)
+        return
+    }
+
+    resp, err := http.Post(asyncServiceURL, "application/json", bytes.NewBuffer(jsonData))
+    if err != nil {
+        logrus.Errorf("Ошибка отправки запроса в асинхронный сервис для краски %d: %v", paint.ID, err)
+        return
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != 202 {
+        logrus.Errorf("Асинхронный сервис вернул статус %d для краски %d", resp.StatusCode, paint.ID)
+        return
+    }
+
+    logrus.Infof("Успешно отправлено в асинхронный сервис: заявка=%d, краска=%d", requestID, paint.ID)
+}
+
+func (r *Repository) UpdatePaintQuantity(requestID int, paintID int, quantity float64) error {
+    var rp ds.RequestsPaint
+
+    err := r.db.Where("request_id = ? AND paint_id = ?", requestID, paintID).
+        First(&rp).Error
+
+    if err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            return fmt.Errorf("%w: связь краски с заявкой не найдена", ErrNotFound)
+        }
+        return err
+    }
+
+    err = r.db.Model(&rp).Update("quantity", quantity).Error
+    if err != nil {
+        return err
+    }
+
+    logrus.Infof(
+        "Обновлено количество: request=%d, paint=%d, quantity=%.2f",
+        requestID, paintID, quantity,
+    )
+
+    return nil
+}
+
+func (r *Repository) GetCalculatedPaintsCount(requestID int) (int, error) {
+	var count int64
+	err := r.db.Model(&ds.RequestsPaint{}).
+		Where("request_id = ? AND quantity IS NOT NULL AND quantity > 0", requestID).
+		Count(&count).Error
+
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
 }

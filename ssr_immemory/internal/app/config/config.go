@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 
-   "github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -17,7 +16,6 @@ func NewConfig() (*Config, error) {
 	var err error
 
    configName := "config"
-   _ = godotenv.Load()
    if os.Getenv("CONFIG_NAME") != "" {
       configName = os.Getenv("CONFIG_NAME")
    }

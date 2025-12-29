@@ -110,34 +110,38 @@ func (r *Repository) DeletePaint(id int) error {
 	return nil
 }
 
-func (r *Repository) AddPaintToRequest(requestId int, paintId int, area float64, layers int) error {
-	var paint ds.Paint
-	if err := r.db.First(&paint, paintId).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: краска с id %d", ErrNotFound, paintId)
-		}
-		return err
-	}
 
-	var request ds.PaintRequest
-	if err := r.db.First(&request, requestId).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: заявка с id %d", ErrNotFound, requestId)
-		}
-		return err
-	}
-	
-	requestPaint := ds.RequestsPaint{}
-	result := r.db.Where("paint_id = ? and request_id = ?", paintId, requestId).Find(&requestPaint)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 0 {
-		return fmt.Errorf("%w: краска %d уже в заявке %d", ErrAlreadyExists, paintId, requestId)
-	}
-	
-	return r.AddPaintToRequest(requestId, paintId, area, layers)
+func (r *Repository) AddPaintToRequest(requestId int, paintId int, area float64, layers int) error {
+    var paint ds.Paint
+    if err := r.db.First(&paint, paintId).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            return fmt.Errorf("%w: краска с id %d", ErrNotFound, paintId)
+        }
+        return err
+    }
+
+    var request ds.PaintRequest
+    if err := r.db.First(&request, requestId).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            return fmt.Errorf("%w: заявка с id %d", ErrNotFound, requestId)
+        }
+        return err
+    }
+
+    var rp ds.RequestsPaint
+    if err := r.db.Where("request_id = ? AND paint_id = ?", requestId, paintId).First(&rp).Error; err == nil {
+        return fmt.Errorf("%w: краска %d уже в заявке %d", ErrAlreadyExists, paintId, requestId)
+    }
+
+    newRp := ds.RequestsPaint{
+        RequestID: uint(requestId),
+        PaintID:   uint(paintId),
+        Area:      area,
+        Layers:    layers,
+    }
+    return r.db.Create(&newRp).Error
 }
+
 
 func (r *Repository) GetModeratorAndCreatorLogin(request ds.PaintRequest) (string, string, error) {
 	var creator ds.User

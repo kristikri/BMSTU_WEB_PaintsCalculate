@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -29,6 +30,7 @@ type Repository struct {
 }
 
 func NewRepository(dsn string) (*Repository, error) {
+	fmt.Println("DB HOST =", os.Getenv("DB_HOST"))
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, err

@@ -1,3 +1,4 @@
+basePath: /api/v1
 definitions:
   apitypes.PaintJSON:
     properties:
@@ -54,7 +55,7 @@ definitions:
   apitypes.UserJSON:
     properties:
       id:
-        type: integer
+        type: string
       is_moderator:
         type: boolean
       login:
@@ -72,8 +73,17 @@ definitions:
     - area
     - layers
     type: object
+host: localhost
 info:
-  contact: {}
+  contact:
+    email: support@paint.com
+    name: API Support
+    url: http://localhost
+  description: API для управления красками и заявками
+  license:
+    name: MIT
+  title: Paint Service API
+  version: "1.0"
 paths:
   /paint/{id}:
     get:
@@ -675,6 +685,55 @@ paths:
       summary: Сформировать заявку
       tags:
       - requests
+  /requests/{id}/paint_quantity:
+    put:
+      consumes:
+      - application/json
+      description: Асинхронный сервис передаёт рассчитанное количество краски по конкретной
+        строке заявки
+      parameters:
+      - description: ID заявки
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Данные расчёта
+        in: body
+        name: data
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Количество обновлено
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Неверные данные
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Доступ запрещен (неверный токен)
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Строка заявки не найдена
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Обновить рассчитанное количество краски (для асинхронного сервиса)
+      tags:
+      - paint_requests
   /requests/paints-calculate:
     get:
       description: Возвращает информацию о текущей корзине заявки пользователя
@@ -870,4 +929,9 @@ paths:
       summary: Выход из системы
       tags:
       - users
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"
